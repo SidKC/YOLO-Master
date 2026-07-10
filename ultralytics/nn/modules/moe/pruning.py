@@ -4,6 +4,9 @@ import torch
 import torch.nn as nn
 import copy
 import argparse
+import hashlib
+import json
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from .analysis import ExpertUsageTracker
 
@@ -11,8 +14,18 @@ from .analysis import ExpertUsageTracker
 class MoEPruner:
     """Pruner for Mixture-of-Experts models based on usage statistics"""
     
-    def __init__(self, model_path: str, threshold: float = 0.15, dataset: str = 'coco8.yaml',
-                 device: Optional[str] = None):
+    def __init__(
+        self,
+        model_path: str,
+        threshold: float = 0.15,
+        dataset: str = 'coco8.yaml',
+        device: Optional[str] = None,
+        importance_mode: str = "usage",
+        keep_top_m: Optional[int] = None,
+        eval_dataset: Optional[str] = None,
+        moe_inference_mode: str = "dense",
+        signal_json: Optional[str] = None,
+    ):
         """
         Initialize MoE pruner
         
@@ -23,11 +36,30 @@ class MoEPruner:
             device: Device for validation. ``None`` (default) auto-detects CUDA,
                 falling back to CPU — previously hard-coded to 'cpu', which was
                 needlessly slow on GPU boxes.
+            importance_mode: ``usage`` for hard hit frequency, ``usage_weight``
+                for hit frequency times average gate weight, ``avg_weight`` for
+                gate weight alone, or ``soft_contribution`` for normalized soft
+                contribution mass within each layer.
+            keep_top_m: Optional fixed expert budget used for diagnostic ablations.
         """
+        valid_modes = {"usage", "usage_weight", "avg_weight", "soft_contribution"}
+        if importance_mode not in valid_modes:
+            raise ValueError(f"importance_mode must be one of {sorted(valid_modes)}, got {importance_mode!r}")
+        if keep_top_m is not None and keep_top_m < 1:
+            raise ValueError("keep_top_m must be >= 1 when provided")
+
         self.model_path = model_path
         self.threshold = threshold
         self.dataset = dataset
         self.device = device if device is not None else self._auto_device()
+        self.importance_mode = importance_mode
+        self.keep_top_m = keep_top_m
+        self.eval_dataset = eval_dataset or dataset
+        if moe_inference_mode not in {"dense", "sparse"}:
+            raise ValueError("moe_inference_mode must be 'dense' or 'sparse'")
+        self.moe_inference_mode = moe_inference_mode
+        self.signal_json = signal_json
+        self.signal_sha256 = None
         self.model = None
         self.usage_stats: Dict[str, Dict[int, Any]] = {}
         self.pruning_plan: Dict[str, List[int]] = {}
@@ -48,6 +80,12 @@ class MoEPruner:
         
         try:
             self.model = YOLO(self.model_path)
+            for module in self.model.model.modules():
+                ensure_compat = getattr(module, "_ensure_compat_attrs", None)
+                if callable(ensure_compat):
+                    ensure_compat()
+                if hasattr(module, "use_sparse_inference"):
+                    module.use_sparse_inference = self.moe_inference_mode == "sparse"
             print(f"✅ Model loaded successfully from {self.model_path}")
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {e}")
@@ -69,6 +107,16 @@ class MoEPruner:
                 print(f"✅ Collected usage stats for {len(self.usage_stats)} layers")
             except Exception as e:
                 raise RuntimeError(f"Diagnosis failed: {e}")
+
+    def _expert_score(self, expert_stats: Any, total_hits: float) -> float:
+        """Return the raw expert importance score for the configured signal."""
+        usage_pct = float(expert_stats.hits) / total_hits if total_hits > 0 else 0.0
+        avg_weight = float(getattr(expert_stats, "avg_weight", 0.0))
+        if self.importance_mode in {"usage_weight", "soft_contribution"}:
+            return usage_pct * avg_weight
+        if self.importance_mode == "avg_weight":
+            return avg_weight
+        return usage_pct
     
     def _create_pruning_plan(self) -> None:
         """Create pruning plan based on usage statistics"""
@@ -81,23 +129,40 @@ class MoEPruner:
             if total_hits == 0:
                 continue
             
+            expert_scores = {
+                expert_id: self._expert_score(expert_stats, total_hits)
+                for expert_id, expert_stats in stats.items()
+            }
+            if self.importance_mode == "soft_contribution":
+                score_sum = sum(expert_scores.values())
+                if score_sum > 0:
+                    expert_scores = {expert_id: score / score_sum for expert_id, score in expert_scores.items()}
+
             experts_to_keep = []
             print(f"\n   Layer: {layer_name}")
-            
-            # Determine which experts to keep based on threshold
+
+            if self.keep_top_m is not None:
+                keep_count = min(self.keep_top_m, len(expert_scores))
+                experts_to_keep = [
+                    expert_id
+                    for expert_id, _ in sorted(expert_scores.items(), key=lambda item: (-item[1], item[0]))[:keep_count]
+                ]
+
+            # Determine which experts to keep based on threshold or fixed budget.
             for expert_id, expert_stats in sorted(stats.items()):
                 usage_pct = expert_stats.hits / total_hits
-                if usage_pct >= self.threshold:
+                score = expert_scores[expert_id]
+                if self.keep_top_m is None and score >= self.threshold:
                     experts_to_keep.append(expert_id)
-                    print(f"     ✅ Keep E{expert_id} (Usage: {usage_pct:.1%})")
+                if expert_id in experts_to_keep:
+                    print(f"     ✅ Keep E{expert_id} (Usage: {usage_pct:.1%}, Score: {score:.4f})")
                 else:
-                    print(f"     🗑️  Drop E{expert_id} (Usage: {usage_pct:.1%})")
+                    print(f"     🗑️  Drop E{expert_id} (Usage: {usage_pct:.1%}, Score: {score:.4f})")
             
             # Safety check: ensure at least one expert remains
             if len(experts_to_keep) == 0:
                 print(f"     ❌ Error: All experts would be pruned! Keeping top expert.")
-                # Keep the expert with highest usage
-                top_expert = max(stats.items(), key=lambda x: x[1].hits)[0]
+                top_expert = max(expert_scores.items(), key=lambda item: item[1])[0]
                 experts_to_keep = [top_expert]
             
             # Check against original top_k requirement
@@ -112,6 +177,65 @@ class MoEPruner:
             self.pruning_plan[layer_name] = sorted(experts_to_keep)
         
         print(f"\n✅ Pruning plan created for {len(self.pruning_plan)} layers")
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _load_pruning_plan_from_signal_json(self) -> None:
+        """Build a pruning plan from one immutable calibration signal artifact."""
+        signal_path = Path(self.signal_json)
+        payload = json.loads(signal_path.read_text(encoding="utf-8"))
+        expected_model_hash = payload.get("model_sha256")
+        actual_model_hash = self._sha256_file(Path(self.model_path))
+        if expected_model_hash and expected_model_hash != actual_model_hash:
+            raise RuntimeError(
+                f"Signal/model hash mismatch: signal={expected_model_hash}, model={actual_model_hash}"
+            )
+
+        modules_dict = dict(self.model.model.named_modules())
+        self.pruning_plan = {}
+        for layer_name, layer in sorted(payload.get("layers", {}).items()):
+            if layer_name not in modules_dict:
+                raise RuntimeError(f"Signal layer not found in model: {layer_name}")
+            scores = {}
+            for expert in layer.get("experts", []):
+                expert_id = int(expert["expert_id"])
+                if self.importance_mode == "soft_contribution":
+                    score = float(expert.get("soft_contribution", 0.0))
+                elif self.importance_mode == "avg_weight":
+                    score = float(expert.get("average_gate_weight", 0.0))
+                elif self.importance_mode == "usage_weight":
+                    score = float(expert.get("hard_usage", 0.0)) * float(
+                        expert.get("average_gate_weight", 0.0)
+                    )
+                else:
+                    score = float(expert.get("hard_usage", 0.0))
+                scores[expert_id] = score
+            if not scores:
+                raise RuntimeError(f"Signal layer has no expert scores: {layer_name}")
+
+            ranked = sorted(scores, key=lambda expert_id: (-scores[expert_id], expert_id))
+            if self.keep_top_m is not None:
+                keep = ranked[: min(self.keep_top_m, len(ranked))]
+            else:
+                keep = [expert_id for expert_id in sorted(scores) if scores[expert_id] >= self.threshold]
+            if not keep:
+                keep = ranked[:1]
+            self.pruning_plan[layer_name] = sorted(keep)
+            print(
+                f"   Signal plan {layer_name}: keep={sorted(keep)} "
+                f"scores={{{', '.join(f'{key}: {scores[key]:.6f}' for key in sorted(scores))}}}"
+            )
+
+        if not self.pruning_plan:
+            raise RuntimeError(f"Signal JSON contains no usable layers: {signal_path}")
+        self.signal_sha256 = self._sha256_file(signal_path)
+        print(f"✅ Loaded immutable pruning plan from {signal_path}")
     
     def _get_parent_module_name(self, layer_name: str) -> str:
         """
@@ -180,6 +304,11 @@ class MoEPruner:
         
         moe_module.experts = new_experts
         moe_module.num_experts = len(keep_indices)
+        if hasattr(moe_module, "expert_usage_counts"):
+            previous = moe_module.expert_usage_counts
+            moe_module.expert_usage_counts = previous.new_zeros(len(keep_indices))
+        if hasattr(moe_module, "last_routing_snapshot"):
+            moe_module.last_routing_snapshot = {}
         
         # Adjust top_k if necessary
         if hasattr(moe_module, 'top_k') and moe_module.top_k > moe_module.num_experts:
@@ -223,13 +352,13 @@ class MoEPruner:
                 stride=proj_layer.stride,
                 padding=proj_layer.padding,
                 bias=(proj_layer.bias is not None)
-            )
+            ).to(device=proj_layer.weight.device, dtype=proj_layer.weight.dtype)
         elif isinstance(proj_layer, nn.Linear):
             new_proj = nn.Linear(
                 in_features=proj_layer.in_features,
                 out_features=len(keep_indices),
                 bias=(proj_layer.bias is not None)
-            )
+            ).to(device=proj_layer.weight.device, dtype=proj_layer.weight.dtype)
         else:
             return False
         
@@ -238,6 +367,9 @@ class MoEPruner:
             new_proj.weight.data = proj_layer.weight.data[keep_indices].clone()
             if proj_layer.bias is not None:
                 new_proj.bias.data = proj_layer.bias.data[keep_indices].clone()
+        new_proj.weight.requires_grad_(proj_layer.weight.requires_grad)
+        if new_proj.bias is not None and proj_layer.bias is not None:
+            new_proj.bias.requires_grad_(proj_layer.bias.requires_grad)
         
         # Replace the layer in the sequential container
         if 'routing_network' in layer_path:
@@ -249,8 +381,22 @@ class MoEPruner:
         router.num_experts = len(keep_indices)
         if hasattr(router, 'top_k'):
             router.top_k = min(router.top_k, router.num_experts)
+        new_proj.train(proj_layer.training)
         
         return True
+
+    def _validate_pruned_module(self, moe_module: nn.Module) -> None:
+        """Fail fast when expert, router, or Top-K dimensions diverge after surgery."""
+        num_experts = int(moe_module.num_experts)
+        if len(moe_module.experts) != num_experts:
+            raise RuntimeError("expert list length does not match num_experts after pruning")
+        if int(getattr(moe_module.routing, "num_experts", -1)) != num_experts:
+            raise RuntimeError("router num_experts does not match pruned expert count")
+        if int(getattr(moe_module, "top_k", num_experts)) > num_experts:
+            raise RuntimeError("top_k exceeds pruned expert count")
+        projection = self._find_projection_layer(moe_module.routing, num_experts)
+        if projection is None:
+            raise RuntimeError("router projection dimension does not match pruned expert count")
     
     def _perform_surgery(self) -> nn.Module:
         """
@@ -293,15 +439,21 @@ class MoEPruner:
             print(f"     Experts: {num_old_experts} → {len(keep_indices)} "
                   f"(keeping {keep_indices})")
             
+            if self._find_projection_layer(moe_module.routing, num_old_experts) is None:
+                raise RuntimeError(f"Cannot atomically prune {parent_name}: router projection was not found")
+
             # Prune experts
             self._prune_experts(moe_module, keep_indices)
             
             # Prune router weights
-            self._prune_router_weights(
+            router_pruned = self._prune_router_weights(
                 moe_module.routing, 
                 keep_indices, 
                 num_old_experts
             )
+            if not router_pruned:
+                raise RuntimeError(f"Cannot atomically prune {parent_name}: router pruning failed")
+            self._validate_pruned_module(moe_module)
         
         print("\n✅ Surgery completed")
         return new_model
@@ -325,7 +477,13 @@ class MoEPruner:
             'updates': None,
             'pruning_info': {
                 'threshold': self.threshold,
-                'pruning_plan': self.pruning_plan
+                'pruning_plan': self.pruning_plan,
+                'importance_mode': self.importance_mode,
+                'calibration_dataset': self.dataset,
+                'eval_dataset': self.eval_dataset,
+                'moe_inference_mode': self.moe_inference_mode,
+                'signal_json': self.signal_json,
+                'signal_sha256': self.signal_sha256,
             }
         }
         
@@ -349,12 +507,15 @@ class MoEPruner:
             
             # Load check
             pruned_model = YOLO(output_path)
+            for module in pruned_model.model.modules():
+                if hasattr(module, "use_sparse_inference"):
+                    module.use_sparse_inference = self.moe_inference_mode == "sparse"
             print("   ✅ Load check: OK")
             
             # Validation check
             print("   🔄 Running validation on pruned model...")
             pruned_model.val(
-                data=self.dataset, 
+                data=self.eval_dataset,
                 split='val', 
                 batch=1, 
                 verbose=False, 
@@ -391,11 +552,12 @@ class MoEPruner:
             # Phase 1: Load model
             self._load_model()
             
-            # Phase 2: Diagnose usage
-            self._diagnose_usage()
-            
-            # Phase 3: Create pruning plan
-            self._create_pruning_plan()
+            # Phase 2-3: Reuse immutable calibration stats, or diagnose once.
+            if self.signal_json:
+                self._load_pruning_plan_from_signal_json()
+            else:
+                self._diagnose_usage()
+                self._create_pruning_plan()
             
             # Phase 4: Perform surgery
             pruned_model = self._perform_surgery()
@@ -424,7 +586,13 @@ def prune_moe_model(
     model_path: str, 
     output_path: str, 
     threshold: float = 0.15, 
-    dataset: str = 'coco8.yaml'
+    dataset: str = 'coco8.yaml',
+    importance_mode: str = "usage",
+    keep_top_m: Optional[int] = None,
+    device: Optional[str] = None,
+    eval_dataset: Optional[str] = None,
+    moe_inference_mode: str = "dense",
+    signal_json: Optional[str] = None,
 ) -> bool:
     """
     Prune MoE model by removing underutilized experts
@@ -438,7 +606,17 @@ def prune_moe_model(
     Returns:
         True if pruning successful
     """
-    pruner = MoEPruner(model_path, threshold, dataset)
+    pruner = MoEPruner(
+        model_path,
+        threshold,
+        dataset,
+        device=device,
+        importance_mode=importance_mode,
+        keep_top_m=keep_top_m,
+        eval_dataset=eval_dataset,
+        moe_inference_mode=moe_inference_mode,
+        signal_json=signal_json,
+    )
     return pruner.prune(output_path)
 
 
@@ -468,6 +646,39 @@ def main():
         default="coco8.yaml",
         help="Dataset configuration for validation"
     )
+    parser.add_argument(
+        "--signal-json",
+        default=None,
+        help="Immutable calibration artifact from diagnose_moe_pruning_signal.py",
+    )
+    parser.add_argument(
+        "--eval-dataset",
+        default=None,
+        help="Dataset configuration used only for post-surgery validation",
+    )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Validation device used for routing diagnosis and verification",
+    )
+    parser.add_argument(
+        "--moe-inference-mode",
+        choices=("dense", "sparse"),
+        default="dense",
+        help="ES_MOE execution path shared by diagnosis and verification",
+    )
+    parser.add_argument(
+        "--importance-mode",
+        choices=("usage", "usage_weight", "avg_weight", "soft_contribution"),
+        default="usage",
+        help="Expert importance signal used by the pruning threshold",
+    )
+    parser.add_argument(
+        "--keep-top-m",
+        type=int,
+        default=None,
+        help="Keep exactly the top-M experts per layer for a fixed-budget ablation",
+    )
     
     args = parser.parse_args()
     
@@ -479,7 +690,13 @@ def main():
         args.model_path, 
         args.output, 
         args.threshold,
-        args.dataset
+        args.dataset,
+        importance_mode=args.importance_mode,
+        keep_top_m=args.keep_top_m,
+        device=args.device,
+        eval_dataset=args.eval_dataset,
+        moe_inference_mode=args.moe_inference_mode,
+        signal_json=args.signal_json,
     )
     
     exit(0 if success else 1)

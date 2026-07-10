@@ -328,8 +328,17 @@ class AdaptiveCapacityMoE(UltraOptimizedMoE):
 class ES_MOE(nn.Module):
     """General MoE block with a routing network and multiple expert branches."""
 
-    def __init__(self, in_channels, out_channels=None, num_experts=3, reduction=8,
-                 top_k=None, use_sparse_inference=True, dynamic_threshold=0.4):
+    def __init__(
+        self,
+        in_channels,
+        out_channels=None,
+        num_experts=3,
+        reduction=8,
+        top_k=None,
+        use_sparse_inference=True,
+        dynamic_threshold=0.4,
+        balance_loss_coeff=1.0,
+    ):
         """
         Args:
             in_channels: Input channels
@@ -339,6 +348,7 @@ class ES_MOE(nn.Module):
             top_k: Number of active experts; None means use all experts
             use_sparse_inference: Enable sparse Top-K expert computation during inference
             dynamic_threshold: Threshold for pruning low-confidence experts during inference
+            balance_loss_coeff: Scale applied to the GShard load-balancing loss
         """
         super(ES_MOE, self).__init__()
 
@@ -352,6 +362,7 @@ class ES_MOE(nn.Module):
         self.use_top_k = (top_k is not None)
         self.use_sparse_inference = use_sparse_inference
         self.dynamic_threshold = dynamic_threshold
+        self.balance_loss_coeff = float(balance_loss_coeff)
 
         # Dynamic routing (Top-K supported)
         self.routing = DynamicRoutingLayer(in_channels, num_experts, reduction, top_k)
@@ -379,6 +390,8 @@ class ES_MOE(nn.Module):
 
     def _ensure_compat_attrs(self):
         """One-time legacy checkpoint attribute repair (not per-forward)."""
+        if not hasattr(self, "balance_loss_coeff"):
+            self.balance_loss_coeff = 1.0
         if not hasattr(self, "use_top_k"):
             self.use_top_k = False
         if not hasattr(self, "use_sparse_inference"):
@@ -432,6 +445,37 @@ class ES_MOE(nn.Module):
         final_output = self.norm(final_output)
 
         return final_output
+
+    def get_gflops(self, input_shape: Tuple[int, int, int, int]) -> Dict[str, float]:
+        """Estimate router and active-expert GFLOPs for sparse inference."""
+        batch, channels, height, width = input_shape
+        router_flops = FlopsUtils.count_conv2d(self.routing.routing_network, (batch, channels, 1, 1))
+
+        expert_flops = []
+        for expert in self.experts:
+            conv = expert.conv
+            depthwise_flops = FlopsUtils.count_conv2d(conv.depthwise, input_shape)
+            out_height = (
+                height + 2 * conv.depthwise.padding[0] - conv.depthwise.dilation[0] * (conv.depthwise.kernel_size[0] - 1) - 1
+            ) // conv.depthwise.stride[0] + 1
+            out_width = (
+                width + 2 * conv.depthwise.padding[1] - conv.depthwise.dilation[1] * (conv.depthwise.kernel_size[1] - 1) - 1
+            ) // conv.depthwise.stride[1] + 1
+            pointwise_flops = FlopsUtils.count_conv2d(
+                conv.pointwise, (batch, conv.depthwise.out_channels, out_height, out_width)
+            )
+            expert_flops.append(depthwise_flops + pointwise_flops)
+
+        dense_expert_flops = sum(expert_flops)
+        active_experts = self.top_k if self.use_top_k else self.num_experts
+        active_expert_flops = dense_expert_flops * active_experts / max(self.num_experts, 1)
+        return {
+            "routing_gflops": router_flops / 1e9,
+            "dense_experts_gflops": dense_expert_flops / 1e9,
+            "active_experts_gflops": active_expert_flops / 1e9,
+            "active_experts": float(active_experts),
+            "total_gflops": (router_flops + active_expert_flops) / 1e9,
+        }
 
     @property
     def aux_loss(self):
@@ -494,7 +538,9 @@ class ES_MOE(nn.Module):
         expert_usage = routing_weights.mean(dim=(0, 2, 3))
         # reduce_ddp=True → usage averaged across ranks so all GPUs share one
         # global balance target (matches MoELoss; no-op on single GPU).
-        load_balance_loss = gshard_balance_loss(expert_usage, self.num_experts, reduce_ddp=True)
+        load_balance_loss = self.balance_loss_coeff * gshard_balance_loss(
+            expert_usage, self.num_experts, reduce_ddp=True
+        )
 
         # Guard against NaN loss (graph-safe: keep grad_fn instead of new leaf)
         if not torch.isfinite(load_balance_loss).all():
@@ -504,6 +550,8 @@ class ES_MOE(nn.Module):
             self.register_buffer("load_balancing_loss", torch.tensor(0.0), persistent=False)
         if not hasattr(self, "expert_usage_counts"):
             self.register_buffer("expert_usage_counts", torch.zeros_like(expert_usage), persistent=False)
+        elif self.expert_usage_counts.shape != expert_usage.shape:
+            self.expert_usage_counts = torch.zeros_like(expert_usage)
         if self.load_balancing_loss.shape == torch.Size([]):
             self.load_balancing_loss = self.load_balancing_loss.to(load_balance_loss.device).reshape(())
         self.load_balancing_loss.copy_(load_balance_loss.detach())

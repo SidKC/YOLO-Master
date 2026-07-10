@@ -194,7 +194,8 @@ class ExpertUsageTracker:
             return True
 
         # Fallback: name-keyword heuristic, excluding basic layer types.
-        has_keyword = any(keyword in name.lower() for keyword in self.ROUTER_KEYWORDS)
+        leaf_name = name.lower().rsplit(".", 1)[-1]
+        has_keyword = leaf_name in self.ROUTER_KEYWORDS
         is_skip_type = isinstance(module, self.SKIP_TYPES)
 
         return has_keyword and not is_skip_type
