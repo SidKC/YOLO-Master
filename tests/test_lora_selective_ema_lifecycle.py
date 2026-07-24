@@ -9,6 +9,8 @@ import torch.nn as nn
 from ultralytics.engine.extensions.adapters import AdapterRuntimeController
 from ultralytics.engine.extensions.recovery import TrainingRecoveryController
 from ultralytics.engine.trainer import BaseTrainer
+from ultralytics.utils.lora import LoRAConfig
+from ultralytics.utils.lora import api as lora_api
 from ultralytics.utils.lora.fallback import ManualLoRAConv
 from ultralytics.utils.torch_utils import ModelEMA
 
@@ -209,3 +211,38 @@ def test_checkpoint_serialization_syncs_non_state_ema_treatment():
 
     assert checkpoint["ema"].layers[0].scaling == model.layers[0].scaling
     assert checkpoint["ema"].layers[0].use_rslora is True
+
+
+def test_fallback_dispatch_retains_gradient_checkpointing(monkeypatch):
+    class TinyDispatchModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = nn.Sequential(nn.Conv2d(4, 4, 1))
+
+    model = TinyDispatchModel()
+    config = LoRAConfig(
+        r=8,
+        alpha=16,
+        backend="fallback",
+        gradient_checkpointing=True,
+        target_modules=["0"],
+    )
+    monkeypatch.setattr(
+        lora_api,
+        "select_lora_backend",
+        lambda *_args, **_kwargs: {
+            "requested_backend": "fallback",
+            "effective_backend": "fallback",
+        },
+    )
+    monkeypatch.setattr(
+        lora_api,
+        "apply_manual_lora",
+        lambda runtime_model, *_args, **_kwargs: runtime_model,
+    )
+
+    result = lora_api.apply_lora(model, config)
+
+    assert result is model
+    assert model.use_gradient_checkpointing is True
+    assert model.model.use_gradient_checkpointing is True

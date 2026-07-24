@@ -696,6 +696,32 @@ def _apply_rtdetr_lora_safety(
     return changes
 
 
+def _enable_gradient_checkpointing(model: nn.Module, config: LoRAConfig) -> None:
+    """Enable the shared checkpointing path after either PEFT or fallback dispatch."""
+    if not config.gradient_checkpointing:
+        return
+
+    from ultralytics.nn.modules.moe.utils import model_has_core_moe
+
+    if model_has_core_moe(model):
+        LOGGER.warning(
+            "[LoRA] Skipping gradient checkpointing on MoE models "
+            "(incompatible with DDP find_unused_parameters=True). "
+            "Set lora_gradient_checkpointing=False to silence this warning."
+        )
+        return
+
+    model.use_gradient_checkpointing = True
+    inner = getattr(model, "model", None)
+    if isinstance(inner, nn.Module):
+        inner.use_gradient_checkpointing = True
+        checkpoint_root = getattr(inner, "model", inner)
+        if isinstance(checkpoint_root, nn.Module):
+            checkpoint_root.use_gradient_checkpointing = True
+            _activate_gradient_checkpointing(checkpoint_root)
+    LOGGER.info("[LoRA] ✅ Gradient checkpointing activated (reduces VRAM by ~30-50%).")
+
+
 def apply_lora(
     model: "DetectionModel",
     args=None,
@@ -856,6 +882,7 @@ def apply_lora(
     )
     if backend_decision["effective_backend"] == "fallback":
         model = apply_manual_lora(model, config, include_head=config.include_head)
+        _enable_gradient_checkpointing(model, config)
         if planner_decision is not None:
             _attach_planner_decision(model, config, planner_decision)
         if placement_plan is not None:
@@ -1189,6 +1216,7 @@ def apply_lora(
             )
             try:
                 model = apply_manual_lora(model, config, include_head=config.include_head)
+                _enable_gradient_checkpointing(model, config)
                 if planner_decision is not None:
                     _attach_planner_decision(model, config, planner_decision)
                 if placement_plan is not None:
@@ -1210,30 +1238,7 @@ def apply_lora(
         LOGGER.info("[LoRA] BatchNorm layers frozen (freeze_bn=True).")
 
     # 6. Gradient Checkpointing (VRAM Optimization) - Actually activate
-    if config.gradient_checkpointing:
-        from ultralytics.nn.modules.moe.utils import model_has_core_moe
-
-        if model_has_core_moe(model):
-            # MoE DDP training requires find_unused_parameters=True; combining
-            # that with gradient checkpointing triggers
-            # "parameter ... marked as ready twice" for unused LoRA adapters.
-            LOGGER.warning(
-                "[LoRA] Skipping gradient checkpointing on MoE models "
-                "(incompatible with DDP find_unused_parameters=True). "
-                "Set lora_gradient_checkpointing=False to silence this warning."
-            )
-        else:
-            # Enable the flag on the model for tasks.py to consume
-            if hasattr(model, "model"):
-                model.model.use_gradient_checkpointing = True
-                if hasattr(model.model, "model"):
-                    model.model.model.use_gradient_checkpointing = True
-                    # Patch C3k2 / Conv layers to use checkpointing if they support it
-                    _activate_gradient_checkpointing(model.model.model)
-
-            # Set directly on the top-level model (LoRADetectionModel)
-            model.use_gradient_checkpointing = True
-            LOGGER.info("[LoRA] ✅ Gradient checkpointing activated (reduces VRAM by ~30-50%).")
+    _enable_gradient_checkpointing(model, config)
 
     # 6.5 MPS Compatibility Check & Warning
     device_type = None
