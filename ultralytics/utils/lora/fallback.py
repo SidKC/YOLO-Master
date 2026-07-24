@@ -758,6 +758,7 @@ def _load_fallback_adapter_state(model: nn.Module, path: Path, payload: Dict[str
                 lora_kwargs["variational_rank"] = bool(config.get("variational_rank", False))
                 lora_kwargs["rank_budget"] = float(config.get("rank_budget", 0.5))
             wrapped = lora_cls(original, **lora_kwargs)
+            wrapped.train(original.training)
             _set_module_by_name(target_root, module_name, wrapped)
 
         wrapped.use_rslora = use_rslora

@@ -10,7 +10,7 @@ from ultralytics.engine.extensions.adapters import AdapterRuntimeController
 from ultralytics.engine.extensions.recovery import TrainingRecoveryController
 from ultralytics.engine.trainer import BaseTrainer
 from ultralytics.nn.tasks import YOLOEModel
-from ultralytics.utils.lora import LoRAConfig
+from ultralytics.utils.lora import LoRAConfig, load_lora_adapters, save_lora_adapters
 from ultralytics.utils.lora import api as lora_api
 from ultralytics.utils.lora.fallback import ManualLoRAConv
 from ultralytics.utils.torch_utils import ModelEMA
@@ -32,6 +32,8 @@ class TinyFallbackGraph(nn.Module):
             ]
         )
         self.lora_enabled = True
+        self.lora_backend = "fallback"
+        self.lora_variant = "lora"
         self.lora_config = SimpleNamespace(r=8, alpha=16)
         self.lora_runtime_metadata = {
             "effective_backend": "fallback",
@@ -271,3 +273,21 @@ def test_yoloe_predict_executes_gradient_checkpointing_when_enabled():
 
     assert len(calls) == 1
     torch.testing.assert_close(result, torch.ones(1, 1, 2, 2))
+
+
+def test_fallback_adapter_load_preserves_eval_mode(tmp_path):
+    source = TinyFallbackGraph()
+    adapter_dir = tmp_path / "adapter"
+    assert save_lora_adapters(source, adapter_dir)
+
+    class TinyBaseGraph(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = nn.ModuleList([nn.Conv2d(4, 4, 1)])
+
+    target = TinyBaseGraph().eval()
+    assert load_lora_adapters(target, adapter_dir)
+
+    wrappers = [module for module in target.modules() if isinstance(module, ManualLoRAConv)]
+    assert len(wrappers) == 1
+    assert wrappers[0].training is False
