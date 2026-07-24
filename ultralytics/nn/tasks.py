@@ -1243,16 +1243,29 @@ class YOLOEModel(DetectionModel):
         source = weights["model"] if isinstance(weights, dict) else weights
         super().load(weights, verbose=verbose)
         migrated = self._migrate_released_segmentation_execution_semantics(source)
+        if migrated:
+            previous = getattr(self, "_released_yoloe_execution_migrations", ())
+            self._released_yoloe_execution_migrations = tuple(
+                sorted(set(previous).union(migrated))
+            )
         if verbose and migrated:
             LOGGER.info(f"Migrated released YOLOE segmentation execution semantics: {', '.join(migrated)}")
 
     def _migrate_released_segmentation_execution_semantics(self, source):
         """Migrate non-state SPPF activation metadata for fully shared released segmentation sources only."""
-        if isinstance(self, YOLOESegModel) or not isinstance(source, YOLOESegModel):
+        inherited = set(
+            getattr(source, "_released_yoloe_execution_migrations", ())
+        )
+        if isinstance(self, YOLOESegModel) or (
+            not isinstance(source, YOLOESegModel) and not inherited
+        ):
             return ()
 
         migrated = []
         for index, (source_layer, target_layer) in enumerate(zip(source.model, self.model)):
+            path = f"model.{index}.cv1.act"
+            if not isinstance(source, YOLOESegModel) and path not in inherited:
+                continue
             if type(source_layer) is not SPPF or type(target_layer) is not SPPF:
                 continue
             if type(source_layer.cv1) is not type(target_layer.cv1):
@@ -1266,7 +1279,7 @@ class YOLOEModel(DetectionModel):
             if not isinstance(source_layer.cv1.act, nn.SiLU) or not isinstance(target_layer.cv1.act, nn.Identity):
                 continue
             target_layer.cv1.act = deepcopy(source_layer.cv1.act)
-            migrated.append(f"model.{index}.cv1.act")
+            migrated.append(path)
         return tuple(migrated)
 
     @smart_inference_mode()

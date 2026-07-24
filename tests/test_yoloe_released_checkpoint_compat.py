@@ -57,6 +57,19 @@ def test_detection_constructor_and_detection_source_keep_current_sppf_identity_s
     assert isinstance(target.model[SPPF_INDEX].cv1.act, nn.Identity)
 
 
+def test_released_segmentation_migration_survives_detection_reconstruction():
+    """A marked detection model must retain the released-checkpoint migration across trainer-style reconstruction."""
+    source, admitted = _checkpoint_like_segmentation_source_and_detection_target()
+    reconstructed = YOLOEModel(str(DETECT_CFG), verbose=False).eval()
+
+    admitted.load({"model": source}, verbose=False)
+    reconstructed.load({"model": admitted}, verbose=False)
+
+    assert admitted._released_yoloe_execution_migrations == ("model.9.cv1.act",)
+    assert reconstructed._released_yoloe_execution_migrations == ("model.9.cv1.act",)
+    assert isinstance(reconstructed.model[SPPF_INDEX].cv1.act, nn.SiLU)
+
+
 def test_released_segmentation_activation_migration_fails_closed_on_sppf_state_layout_mismatch():
     """A source with a different SPPF state layout must not transfer non-state execution metadata."""
     source, target = _checkpoint_like_segmentation_source_and_detection_target()
