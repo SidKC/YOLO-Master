@@ -1430,6 +1430,7 @@ class YOLOEModel(DetectionModel):
         """
         y, dt, embeddings = [], [], []  # outputs
         b = x.shape[0]
+        use_gc = getattr(self, "use_gradient_checkpointing", False) and self.training
         embed = frozenset(embed) if embed else {-1}
         max_idx = max(embed)
         for m in self.model:  # except the head part
@@ -1447,7 +1448,7 @@ class YOLOEModel(DetectionModel):
                 if cls_pe.shape[0] != b or m.export:
                     cls_pe = cls_pe.expand(b, -1, -1)
                 x.append(cls_pe)  # adding cls embedding
-            x = m(x)  # run
+            x = self._apply_checkpointing(m, x) if use_gc else m(x)  # run
 
             y.append(x if m.i in self.save else None)  # save output
             if visualize:

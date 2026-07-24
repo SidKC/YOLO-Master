@@ -9,6 +9,7 @@ import torch.nn as nn
 from ultralytics.engine.extensions.adapters import AdapterRuntimeController
 from ultralytics.engine.extensions.recovery import TrainingRecoveryController
 from ultralytics.engine.trainer import BaseTrainer
+from ultralytics.nn.tasks import YOLOEModel
 from ultralytics.utils.lora import LoRAConfig
 from ultralytics.utils.lora import api as lora_api
 from ultralytics.utils.lora.fallback import ManualLoRAConv
@@ -246,3 +247,27 @@ def test_fallback_dispatch_retains_gradient_checkpointing(monkeypatch):
     assert result is model
     assert model.use_gradient_checkpointing is True
     assert model.model.use_gradient_checkpointing is True
+
+
+def test_yoloe_predict_executes_gradient_checkpointing_when_enabled():
+    class TinyLayer(nn.Module):
+        i = 0
+        f = -1
+        type = "TinyLayer"
+
+        def forward(self, x):
+            return x + 1
+
+    calls = []
+    runtime_model = SimpleNamespace(
+        model=[TinyLayer()],
+        save=[],
+        training=True,
+        use_gradient_checkpointing=True,
+        _apply_checkpointing=lambda module, inputs: calls.append(module) or module(inputs),
+    )
+
+    result = YOLOEModel.predict(runtime_model, torch.zeros(1, 1, 2, 2))
+
+    assert len(calls) == 1
+    torch.testing.assert_close(result, torch.ones(1, 1, 2, 2))
