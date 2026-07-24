@@ -483,6 +483,7 @@ class BaseTrainer:
         if self.args.distill_model is not None and "dis_loss" not in self.loss_names:
             self.loss_names += ("dis_loss",)
         self.ema = ModelEMA(self.model)
+        self.adapter_controller.configure_ema(self.ema, self.optimizer)
         self.set_class_weights()  # compute class weights after dataloader is ready
         if RANK in {-1, 0}:
             metric_keys = self.validator.metrics.keys + self.label_loss_items(prefix="val")
@@ -976,6 +977,8 @@ class BaseTrainer:
         self.optimizer.zero_grad()
         if self.ema:
             self.ema.update(self.model)
+            if controller is not None:
+                controller.sync_ema_treatment()
         return True
 
     def preprocess_batch(self, batch):
@@ -990,6 +993,7 @@ class BaseTrainer:
                 - metrics (dict | None): Dictionary of validation metrics, or None if validation was skipped.
                 - fitness (float | None): Fitness score for the validation, or None if validation was skipped.
         """
+        self.adapter_controller.sync_ema_treatment()
         self._sync_ema_buffers_for_validation()
         ema_model = getattr(getattr(self, "ema", None), "ema", None)
         if ema_model is not None and not self._state_is_finite(unwrap_model(ema_model)):
@@ -1341,6 +1345,7 @@ class BaseTrainer:
             else:
                 ema_target.load_state_dict(ema_state, strict=False)
             self.ema.updates = ckpt["updates"]
+            self.adapter_controller.configure_ema(self.ema, self.optimizer)
         self.best_fitness = ckpt.get("best_fitness")
 
     def _restore_lora_resume_model(self, ckpt):
@@ -1415,6 +1420,7 @@ class BaseTrainer:
             unwrap_model(self.model).criterion.updates = start_epoch - 1
             unwrap_model(self.model).criterion.update()
         self.start_epoch = start_epoch
+        self.adapter_controller.restore_after_resume(start_epoch)
         if start_epoch > (self.epochs - self.args.close_mosaic):
             self._close_dataloader_mosaic()
 

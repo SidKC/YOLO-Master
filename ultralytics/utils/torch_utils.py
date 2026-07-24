@@ -729,6 +729,25 @@ class ModelEMA:
         for p in self.ema.parameters():
             p.requires_grad_(False)
         self.enabled = True
+        self.state_policy = "all_state_ema"
+        self.adapter_state_names = None
+
+    def configure_adapter_only(self, model, adapter_state_names):
+        """EMA adapter tensors while exactly copying every other model state entry."""
+        model = unwrap_model(model)
+        names = frozenset(adapter_state_names)
+        parameter_names = set(dict(model.named_parameters()))
+        state_names = set(model.state_dict())
+        if not names:
+            raise ValueError("Adapter-only EMA requires at least one adapter parameter.")
+        if not names <= parameter_names:
+            raise ValueError(f"Adapter-only EMA received unknown parameters: {sorted(names - parameter_names)[:5]}")
+        if not names <= state_names:
+            raise ValueError(f"Adapter-only EMA parameters are absent from state_dict: {sorted(names - state_names)[:5]}")
+        if state_names != set(self.ema.state_dict()):
+            raise ValueError("Online and EMA state layouts differ before adapter-only EMA configuration.")
+        self.state_policy = "adapter_only_exact_copy_v1"
+        self.adapter_state_names = names
 
     def update(self, model):
         """Update EMA parameters.
@@ -742,7 +761,9 @@ class ModelEMA:
 
             msd = unwrap_model(model).state_dict()  # model state_dict
             for k, v in self.ema.state_dict().items():
-                if v.dtype.is_floating_point:  # true for FP16 and FP32
+                if self.adapter_state_names is not None and k not in self.adapter_state_names:
+                    v.copy_(msd[k].detach())
+                elif v.dtype.is_floating_point:  # true for FP16 and FP32
                     v *= d
                     v += (1 - d) * msd[k].detach()
                     # assert v.dtype == msd[k].dtype == torch.float32, f'{k}: EMA {v.dtype},  model {msd[k].dtype}'

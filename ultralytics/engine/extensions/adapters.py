@@ -27,6 +27,9 @@ def update_args_with_lora_runtime_metadata(args, model) -> None:
         "peft_type": "effective_lora_type",
         "requested_init_lora_weights": "requested_lora_init_lora_weights",
         "effective_init_lora_weights": "effective_lora_init_lora_weights",
+        "requested_use_rslora": "requested_lora_use_rslora",
+        "effective_use_rslora": "effective_lora_use_rslora",
+        "ema_policy": "effective_lora_ema_policy",
         "safety_profile": "lora_safety_profile",
         "safety_overrides": "lora_safety_overrides",
         "target_audit": "lora_target_audit",
@@ -219,16 +222,71 @@ class AdapterRuntimeController:
         self.trainer.lora_ortho_frequency = self.ortho_frequency
         self.trainer.lora_ortho_batch_counter = 0
 
+    def configure_ema(self, ema, optimizer) -> None:
+        """Configure fallback LoRA EMA from the exact optimizer membership."""
+        if not self.enabled:
+            return
+        metadata = dict(getattr(self.model, "lora_runtime_metadata", {}) or {})
+        if metadata.get("effective_backend") != "fallback":
+            return
+        optimizer_ids = {id(parameter) for group in optimizer.param_groups for parameter in group["params"]}
+        names_by_id = {id(parameter): name for name, parameter in self.model.named_parameters()}
+        missing = optimizer_ids - set(names_by_id)
+        if missing:
+            raise ValueError("Adapter optimizer contains parameters that are not present in the online model.")
+        adapter_names = {names_by_id[parameter_id] for parameter_id in optimizer_ids}
+        invalid = sorted(name for name in adapter_names if not name.endswith((".lora_A", ".lora_B")))
+        if invalid:
+            raise ValueError(f"Fallback adapter-only EMA received non-adapter optimizer parameters: {invalid[:5]}")
+        ema.configure_adapter_only(self.model, adapter_names)
+        metadata["ema_policy"] = ema.state_policy
+        self.model.lora_runtime_metadata = metadata
+        update_args_with_lora_runtime_metadata(self.trainer.args, self.model)
+        self.sync_ema_treatment()
+
+    def sync_ema_treatment(self) -> int:
+        """Copy non-state fallback treatment attributes from online wrappers to EMA wrappers."""
+        ema = getattr(getattr(self.trainer, "ema", None), "ema", None)
+        if ema is None:
+            return 0
+        online_modules = dict(self.model.named_modules())
+        ema_modules = dict(unwrap_model(ema).named_modules())
+        synced = 0
+        for name, online in online_modules.items():
+            if not all(hasattr(online, attr) for attr in ("lora_A", "lora_B", "scaling", "use_rslora", "r", "alpha")):
+                continue
+            averaged = ema_modules.get(name)
+            if averaged is None:
+                raise ValueError(f"EMA is missing fallback adapter module '{name}'.")
+            for attr in ("scaling", "use_rslora", "r", "alpha"):
+                setattr(averaged, attr, getattr(online, attr))
+            synced += 1
+        return synced
+
+    def _set_alpha_for_epoch(self, epoch: int) -> None:
+        """Set the effective alpha schedule, including resume after the warmup endpoint."""
+        if self.strategy is None:
+            return
+        alpha_warmup = int(getattr(self.trainer.args, "lora_alpha_warmup", 0) or 0)
+        if alpha_warmup <= 0:
+            return
+        if epoch < alpha_warmup:
+            self.strategy.step_alpha_warmup(epoch, warmup_epochs=alpha_warmup)
+        else:
+            self.strategy.finalize_alpha_warmup()
+
+    def restore_after_resume(self, start_epoch: int) -> None:
+        """Restore the scheduled treatment after checkpoint reconstruction."""
+        self._set_alpha_for_epoch(start_epoch)
+        self.sync_ema_treatment()
+
     def begin_epoch(self, epoch: int) -> None:
         """Advance alpha warmup and adapter dropout schedules."""
         if self.strategy is None:
             return
         args = self.trainer.args
-        alpha_warmup = int(getattr(args, "lora_alpha_warmup", 0) or 0)
-        if 0 <= epoch < alpha_warmup:
-            self.strategy.step_alpha_warmup(epoch, warmup_epochs=alpha_warmup)
-        elif alpha_warmup > 0 and epoch == alpha_warmup:
-            self.strategy.finalize_alpha_warmup()
+        self._set_alpha_for_epoch(epoch)
+        self.sync_ema_treatment()
         self.strategy.update_dropout_schedule(
             self.trainer.model,
             epoch=epoch,
