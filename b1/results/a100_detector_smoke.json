@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "status": "PASS",
+  "run_id": "b1-a100-detector-smoke-20260823T154901Z",
+  "source_commit": "440c5ee72654dc16d650f07f80b2f58a43ce6d0e",
+  "model": "real DetectionModel",
+  "model_config": "ultralytics/cfg/models/master/v0_15/det/yolo-master-b1-tiny.yaml",
+  "configuration": {
+    "image_size": [64, 64],
+    "precision": "FP32",
+    "optimizer": "SGD",
+    "learning_rate": 0.001
+  },
+  "device": {
+    "name": "NVIDIA A100-PCIE-40GB",
+    "total_memory_bytes": 42404806656,
+    "torch": "2.4.1+cu121",
+    "cuda": "12.1"
+  },
+  "cases": [
+    {
+      "status": "PASS",
+      "seed": 20260824,
+      "batch_size": 1,
+      "expected_experts": [0],
+      "executed_experts": [0],
+      "loss": 6.391531467437744,
+      "aux_loss": 0.03031560778617859,
+      "module_max_parameter_delta": 0.00021958351135253906,
+      "expert_max_parameter_delta": {
+        "0": 0.000031558796763420105
+      },
+      "condition_unchanged": true,
+      "condition_grad_is_none": true,
+      "frozen_detector_unchanged": true,
+      "aux_count": 1,
+      "stale_eval_duplicate_aux_counts": [0, 0, 0]
+    },
+    {
+      "status": "PASS",
+      "seed": 20260825,
+      "batch_size": 1,
+      "expected_experts": [1],
+      "executed_experts": [1],
+      "loss": 7.058568000793457,
+      "aux_loss": 0.03031560778617859,
+      "module_max_parameter_delta": 0.00022166967391967773,
+      "expert_max_parameter_delta": {
+        "1": 0.000030511990189552307
+      },
+      "condition_unchanged": true,
+      "condition_grad_is_none": true,
+      "frozen_detector_unchanged": true,
+      "aux_count": 1,
+      "stale_eval_duplicate_aux_counts": [0, 0, 0]
+    },
+    {
+      "status": "PASS",
+      "seed": 20260826,
+      "batch_size": 2,
+      "expected_experts": [0, 1],
+      "executed_experts": [0, 1],
+      "loss": 18.422012329101562,
+      "aux_loss": 0.022699667140841484,
+      "module_max_parameter_delta": 0.00016111135482788086,
+      "expert_max_parameter_delta": {
+        "0": 0.00008142367005348206,
+        "1": 0.00008315593004226685
+      },
+      "condition_unchanged": true,
+      "condition_grad_is_none": true,
+      "frozen_detector_unchanged": true,
+      "aux_count": 1,
+      "stale_eval_duplicate_aux_counts": [0, 0, 0]
+    }
+  ],
+  "peak_memory_allocated_bytes": 38845440,
+  "peak_memory_reserved_bytes": 46137344,
+  "started_at_utc": "2026-08-23T15:56:34.972482Z",
+  "finished_at_utc": "2026-08-23T15:56:40.151478Z",
+  "wall_seconds": 5.179002260789275,
+  "source_evidence_sha256": {
+    "terminal": "48f67455fdb1e7d4e29aecc08db8d9fc802f64a2face5095bfc9da6823c1e708",
+    "result": "61bc728a0f57474a190d4735c44434d5d297a86b1ccf2dbd562b9aacd3811190",
+    "stdout": "0f7bb00efa1c48964e2568c4335e37915a74d67fbd8f39dfdcf854b1857b8238"
+  }
+}

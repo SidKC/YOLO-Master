@@ -47,12 +47,27 @@ def _validate_artifacts() -> dict[str, bool]:
     assert model_config.count("TextConditionedMoT") == 1
     result = json.loads((ROOT / "b1/results/admission_result.json").read_text())
     assert result["status"] == "PASS_ADMISSION_SMOKE"
+    a100_result = json.loads((ROOT / "b1/results/a100_detector_smoke.json").read_text())
+    assert a100_result["status"] == "PASS"
+    assert len(a100_result["cases"]) == 3
+    assert [case["executed_experts"] for case in a100_result["cases"]] == [[0], [1], [0, 1]]
+    assert all(case["status"] == "PASS" for case in a100_result["cases"])
+    assert all(case["aux_count"] == 1 for case in a100_result["cases"])
+    assert all(case["stale_eval_duplicate_aux_counts"] == [0, 0, 0] for case in a100_result["cases"])
+    memory_budget = result["memory_budget"]
+    assert memory_budget["primary_device_measured"] is True
+    assert memory_budget["primary_max_memory_reserved_fraction"] == 0.8
+    assert a100_result["peak_memory_reserved_bytes"] < memory_budget["primary_max_memory_reserved_cap_bytes"]
     return {
         "split_counts_48_17_15": True,
         "split_groups_pairwise_disjoint": True,
         "split_coco80_union_is_0_to_79": True,
         "model_config_has_exactly_one_text_router": True,
         "result_status_is_pass": True,
+        "a100_detector_three_cases_pass": True,
+        "a100_detector_routes_cover_both_experts": True,
+        "a100_detector_aux_exactly_once": True,
+        "a100_detector_peak_is_within_budget": True,
     }
 
 

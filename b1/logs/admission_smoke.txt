@@ -42,6 +42,26 @@ PASS canonical current-step MoT aux count = 1
 PASS stale/eval/duplicate aux counts = 0/0/0
 PASS eval aux publication rejected
 
+A100 real DetectionModel integration evidence
+---------------------------------------------
+source commit: 440c5ee72654dc16d650f07f80b2f58a43ce6d0e
+environment: PyTorch 2.4.1+cu121, CUDA 12.1, NVIDIA A100-PCIE-40GB
+visible memory: 42404806656 bytes (39.49 GiB)
+
+PASS batch 1 expected/executed expert [0]
+PASS batch 1 expected/executed expert [1]
+PASS batch 2 expected/executed experts [0, 1]
+PASS all 3 cases have finite CUDA forward, detector loss backward and optimizer update
+PASS selected expert gradients and parameter updates are finite and nonzero
+PASS frozen text condition and non-router detector parameters are unchanged
+PASS current-step MoT aux count = 1 in every case
+PASS stale/eval/duplicate aux counts = 0/0/0 in every case
+
+peak whole-process allocator value: 37.0459 MiB allocated / 44.0 MiB reserved
+wall time: 5.1790022608 seconds
+result SHA-256: 61bc728a0f57474a190d4735c44434d5d297a86b1ccf2dbd562b9aacd3811190
+terminal SHA-256: 48f67455fdb1e7d4e29aecc08db8d9fc802f64a2face5095bfc9da6823c1e708
+
 CUDA component evidence
 -----------------------
 environment: PyTorch 2.4.1+cu121, CUDA 12.1, NVIDIA A100-PCIE-40GB
@@ -55,4 +75,4 @@ PASS seed 20260825: expert0/1 weight+bias gradients finite/nonzero; updates fini
 
 Admission package status
 ------------------------
-PASS: two-expert small-configuration structural gate and all seven admission artifacts are complete.
+PASS: two-expert small-configuration gate, real DetectionModel A100 integration and all seven admission artifacts are complete.

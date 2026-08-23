@@ -1,0 +1,46 @@
+B1 A100 real DetectionModel integration smoke
+==============================================
+
+Source
+------
+commit: 440c5ee72654dc16d650f07f80b2f58a43ce6d0e
+model config: ultralytics/cfg/models/master/v0_15/det/yolo-master-b1-tiny.yaml
+
+Environment
+-----------
+device: NVIDIA A100-PCIE-40GB
+PyTorch: 2.4.1+cu121
+CUDA: 12.1
+visible memory: 42404806656 bytes (39.49 GiB)
+
+Cases
+-----
+PASS seed 20260824, batch 1: expected/executed expert [0]; loss 6.3915314674; aux 0.0303156078
+PASS seed 20260825, batch 1: expected/executed expert [1]; loss 7.0585680008; aux 0.0303156078
+PASS seed 20260826, batch 2: expected/executed experts [0, 1]; loss 18.4220123291; aux 0.0226996671
+
+Checks shared by all cases
+--------------------------
+PASS real DetectionModel CUDA forward, detector loss backward and optimizer update are finite
+PASS selected expert gradients and parameter updates are finite and nonzero
+PASS text projection and Router gradients are finite and nonzero
+PASS frozen text condition is unchanged and receives no gradient
+PASS non-router detector parameters are unchanged
+PASS current-step MoT auxiliary loss count is exactly 1
+PASS stale/eval/duplicate auxiliary counts are 0/0/0
+
+Memory and time
+---------------
+peak allocated: 38845440 bytes (37.05 MiB)
+peak reserved: 46137344 bytes (44.00 MiB)
+wall time: 5.1790022608 seconds
+
+Source evidence SHA-256
+----------------------
+terminal: 48f67455fdb1e7d4e29aecc08db8d9fc802f64a2face5095bfc9da6823c1e708
+result: 61bc728a0f57474a190d4735c44434d5d297a86b1ccf2dbd562b9aacd3811190
+stdout: 0f7bb00efa1c48964e2568c4335e37915a74d67fbd8f39dfdcf854b1857b8238
+
+Status
+------
+PASS: real DetectionModel two-expert integration smoke on one A100.

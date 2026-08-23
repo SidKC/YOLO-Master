@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "status": "PASS_ADMISSION_SMOKE",
-  "verified_at_utc": "2026-08-23T07:46:21Z",
+  "verified_at_utc": "2026-08-23T15:56:40Z",
   "baseline": {
     "repository": "Tencent/YOLO-Master",
     "commit": "acce839c7e895d6b179de7f7093fa879e237cc7b",
@@ -17,7 +17,7 @@
     "two_expert_forward_backward": "PASS",
     "base_new_split": "PASS_OFFLINE_48_17_15_PARTITION",
     "freeze_strategy": "PASS_CONTRACT_AND_SMOKE_EVIDENCE",
-    "vram_budget": "PASS_BUDGET_CONTRACT"
+    "vram_budget": "PASS_A100_MEASUREMENT_AND_4090_COMPATIBILITY_BUDGET"
   },
   "integrated_detector_smoke": {
     "device": "CPU",
@@ -37,6 +37,37 @@
     "canonical_aux_current_step_count": 1,
     "canonical_aux_stale_eval_duplicate": [0, 0, 0],
     "criterion_aux_consumed_once": true
+  },
+  "a100_integrated_detector_smoke": {
+    "status": "PASS",
+    "run_id": "b1-a100-detector-smoke-20260823T154901Z",
+    "source_commit": "440c5ee72654dc16d650f07f80b2f58a43ce6d0e",
+    "device": "NVIDIA A100-PCIE-40GB",
+    "torch": "2.4.1+cu121",
+    "cuda": "12.1",
+    "visible_total_memory_bytes": 42404806656,
+    "model": "real DetectionModel",
+    "seeds": [20260824, 20260825, 20260826],
+    "batch_sizes": [1, 1, 2],
+    "expected_routes": [[0], [1], [0, 1]],
+    "executed_routes": [[0], [1], [0, 1]],
+    "passing_cases": 3,
+    "forward_backward_update_finite": true,
+    "selected_experts_gradient_and_update_finite_nonzero": true,
+    "condition_projection_and_router_gradient_finite_nonzero": true,
+    "frozen_condition_unchanged": true,
+    "frozen_detector_unchanged": true,
+    "canonical_aux_current_step_count_per_case": 1,
+    "canonical_aux_stale_eval_duplicate_total": [0, 0, 0],
+    "whole_process_peak_allocated_mib": 37.0458984375,
+    "whole_process_peak_reserved_mib": 44.0,
+    "wall_seconds": 5.179002260789275,
+    "evidence_file": "b1/results/a100_detector_smoke.json",
+    "source_evidence_sha256": {
+      "terminal": "48f67455fdb1e7d4e29aecc08db8d9fc802f64a2face5095bfc9da6823c1e708",
+      "result": "61bc728a0f57474a190d4735c44434d5d297a86b1ccf2dbd562b9aacd3811190",
+      "stdout": "0f7bb00efa1c48964e2568c4335e37915a74d67fbd8f39dfdcf854b1857b8238"
+    }
   },
   "cuda_component_smoke": {
     "device": "NVIDIA A100-PCIE-40GB",
@@ -60,8 +91,23 @@
     "union_count": 80
   },
   "memory_budget": {
-    "reference_device": "RTX 4090 24 GiB",
-    "warm_max_memory_reserved_cap_gib": 19.2,
-    "required_headroom_gib": 4.8
+    "policy": "At most 80% of visible device memory; at least 20% headroom.",
+    "primary_reference_device": "NVIDIA A100-PCIE-40GB",
+    "primary_device_measured": true,
+    "primary_visible_total_memory_bytes": 42404806656,
+    "primary_visible_total_memory_gib": 39.4925537109375,
+    "primary_max_memory_reserved_fraction": 0.8,
+    "primary_max_memory_reserved_cap_bytes": 33923845324,
+    "primary_max_memory_reserved_cap_gib": 31.59404296875,
+    "primary_required_headroom_gib": 7.8985107421875,
+    "a100_integrated_smoke_peak_allocated_mib": 37.0458984375,
+    "a100_integrated_smoke_peak_reserved_mib": 44.0,
+    "a100_component_smoke_peak_allocated_mib": 17.78759765625,
+    "a100_component_smoke_peak_reserved_mib": 22.0,
+    "compatibility_reference_device": "RTX 4090 24 GiB",
+    "compatibility_device_measured": false,
+    "compatibility_max_memory_reserved_cap_gib": 19.2,
+    "compatibility_required_headroom_gib": 4.8,
+    "scope": "The measured peaks apply to the tiny admission smoke, not full-model training."
   }
 }
