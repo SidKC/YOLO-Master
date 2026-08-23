@@ -77,6 +77,7 @@ from ultralytics.nn.modules import (
     Segment26,
     SemanticSegment,
     TorchVision,
+    TextConditionedMoT,
     WorldDetect,
     YOLOEDetect,
     YOLOESegment,
@@ -162,7 +163,7 @@ class BaseModel(torch.nn.Module):
             return self.loss(x, *args, **kwargs)
         return self.predict(x, *args, **kwargs)
 
-    def predict(self, x, profile=False, visualize=False, augment=False, embed=None):
+    def predict(self, x, profile=False, visualize=False, augment=False, embed=None, condition=None):
         """Perform a forward pass through the network.
 
         Args:
@@ -171,15 +172,16 @@ class BaseModel(torch.nn.Module):
             visualize (bool): Save the feature maps of the model if True.
             augment (bool): Augment image during prediction.
             embed (list, optional): A list of layer indices to return embeddings from.
+            condition (torch.Tensor, optional): Frozen text condition with shape ``[D]`` or ``[B,D]``.
 
         Returns:
             (torch.Tensor): The last output of the model.
         """
         if augment:
-            return self._predict_augment(x)
-        return self._predict_once(x, profile, visualize, embed)
+            return self._predict_augment(x, condition=condition)
+        return self._predict_once(x, profile, visualize, embed, condition=condition)
 
-    def _predict_once(self, x, profile=False, visualize=False, embed=None):
+    def _predict_once(self, x, profile=False, visualize=False, embed=None, condition=None):
         """Perform a forward pass through the network.
 
         Args:
@@ -187,6 +189,7 @@ class BaseModel(torch.nn.Module):
             profile (bool): Print the computation time of each layer if True.
             visualize (bool): Save the feature maps of the model if True.
             embed (list, optional): A list of layer indices to return embeddings from.
+            condition (torch.Tensor, optional): Frozen text condition with shape ``[D]`` or ``[B,D]``.
 
         Returns:
             (torch.Tensor): The last output of the model.
@@ -207,7 +210,11 @@ class BaseModel(torch.nn.Module):
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
-            x = self._apply_checkpointing(m, x) if use_gc else m(x)
+            x = (
+                self._apply_checkpointing(m, x, condition=condition)
+                if use_gc
+                else self._forward_module(m, x, condition)
+            )
             y.append(x if m.i in self.save else None)  # save output
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
@@ -217,15 +224,22 @@ class BaseModel(torch.nn.Module):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
         return x
 
-    def _apply_checkpointing(self, module, inputs):
+    @staticmethod
+    def _forward_module(module, inputs, condition=None):
+        """Forward a layer, passing the explicit condition only to the text router."""
+        if isinstance(module, TextConditionedMoT):
+            return module(inputs, condition=condition)
+        return module(inputs)
+
+    def _apply_checkpointing(self, module, inputs, condition=None):
         """Checkpoint dense modules while preserving routed aux-loss graph ownership."""
         values = inputs if isinstance(inputs, list) else [inputs]
         if not any(isinstance(value, torch.Tensor) and value.requires_grad for value in values):
-            return module(inputs)
+            return self._forward_module(module, inputs, condition)
         if self._has_moe_aux_registry_module(module):
-            return module(inputs)
+            return self._forward_module(module, inputs, condition)
         if not any(True for _ in module.parameters()):
-            return module(inputs)
+            return self._forward_module(module, inputs, condition)
         if isinstance(inputs, list):
 
             def wrapper(*args):
@@ -249,13 +263,13 @@ class BaseModel(torch.nn.Module):
                 return True
         return False
 
-    def _predict_augment(self, x):
+    def _predict_augment(self, x, condition=None):
         """Perform augmentations on input image x and return augmented inference."""
         LOGGER.warning(
             f"{self.__class__.__name__} does not support 'augment=True' prediction. "
             f"Reverting to single-scale prediction."
         )
-        return self._predict_once(x)
+        return self._predict_once(x, condition=condition)
 
     def _profile_one_layer(self, m, x, dt):
         """Profile the computation time and FLOPs of a single layer of the model on a given input.
@@ -472,7 +486,7 @@ class BaseModel(torch.nn.Module):
             self.criterion = self.init_criterion()
 
         if preds is None:
-            preds = self.forward(batch["img"])
+            preds = self.forward(batch["img"], condition=batch.get("text_condition"))
         return self.criterion(preds, batch)
 
     def init_criterion(self):
@@ -590,7 +604,7 @@ class DetectionModel(BaseModel):
                 continue
             setattr(head, k, v)
 
-    def _predict_augment(self, x):
+    def _predict_augment(self, x, condition=None):
         """Perform augmentations on input image x and return augmented inference and train outputs.
 
         Args:
@@ -601,14 +615,14 @@ class DetectionModel(BaseModel):
         """
         if getattr(self, "end2end", False) or self.__class__.__name__ != "DetectionModel":
             LOGGER.warning("Model does not support 'augment=True', reverting to single-scale prediction.")
-            return self._predict_once(x)
+            return self._predict_once(x, condition=condition)
         img_size = x.shape[-2:]  # height, width
         s = [1, 0.83, 0.67]  # scales
         f = [None, 3, None]  # flips (2-ud, 3-lr)
         y = []  # outputs
         for si, fi in zip(s, f):
             xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-            yi = super().predict(xi)[0]  # forward
+            yi = super().predict(xi, condition=condition)[0]  # forward
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
         y = self._clip_augmented(y)  # clip augmented tails
@@ -2159,6 +2173,17 @@ def parse_model(d, ch, verbose=True):
                     args.extend((True, 1.2))
             if m is C2fCIB:
                 legacy = False
+        elif m is TextConditionedMoT:
+            # Keep the condition widths and coefficient literal; only the detector
+            # feature width follows the YAML scale, with explicit argument binding.
+            if len(args) != 4:
+                raise ValueError(
+                    "TextConditionedMoT YAML args must be [c2, text_dim, hidden_dim, balance_loss_coeff]"
+                )
+            yaml_c2, text_dim, hidden_dim, balance_loss_coeff = args
+            c1 = ch[f]
+            c2 = make_divisible(min(int(yaml_c2), max_channels) * width, 8)
+            args = [c1, c2, int(text_dim), int(hidden_dim), float(balance_loss_coeff)]
         elif m in MIXTURE_BASE_MODULES:
             args, c2, n, mixture_legacy_false = adapt_mixture_args(
                 m,

@@ -372,6 +372,16 @@ def _model_arg(model: nn.Module, name: str, default: float) -> float:
     return default if value is None else float(value)
 
 
+def _add_aux_once(native_loss: torch.Tensor, aux: torch.Tensor) -> torch.Tensor:
+    """Add one scalar auxiliary term without broadcasting it across loss items."""
+    if native_loss.ndim == 0:
+        return native_loss + aux
+    if native_loss.numel() == 0:
+        raise ValueError("native criterion returned an empty loss tensor")
+    aux_slot = torch.cat((aux.reshape(1), native_loss.new_zeros(native_loss.numel() - 1))).reshape_as(native_loss)
+    return native_loss + aux_slot
+
+
 class CompositeCriterion:
     """Add one model-level routed auxiliary term after the native criterion."""
 
@@ -413,7 +423,7 @@ class CompositeCriterion:
             aux_budget=_model_arg(self.model, "mixture_aux_budget", 3.0),
         )
         self.model._last_mixture_aux_loss = aux.detach()
-        total = native_loss + aux
+        total = _add_aux_once(native_loss, aux)
         if isinstance(native_items, torch.Tensor):
             items = torch.cat((native_items.reshape(-1), aux.detach().reshape(1)))
         elif isinstance(native_items, (list, tuple)):
@@ -448,7 +458,7 @@ def compose_native_result(model: nn.Module, native_loss: torch.Tensor, native_it
         aux_budget=_model_arg(model, "mixture_aux_budget", 3.0),
     )
     model._last_mixture_aux_loss = aux.detach()
-    return native_loss + aux, torch.cat((native_items.reshape(-1), aux.detach().reshape(1)))
+    return _add_aux_once(native_loss, aux), torch.cat((native_items.reshape(-1), aux.detach().reshape(1)))
 
 
 __all__ = [

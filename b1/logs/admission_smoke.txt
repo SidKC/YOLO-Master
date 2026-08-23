@@ -1,0 +1,58 @@
+B1 8.24 admission smoke evidence log
+====================================
+
+Official incremental baseline
+-----------------------------
+repository: Tencent/YOLO-Master
+commit: acce839c7e895d6b179de7f7093fa879e237cc7b
+
+Smoke implementation base
+-------------------------
+commit: 22140b74f1fdf7edc5ead18c3dbebce5e611c212
+upstream commits after official baseline: 3
+model config: ultralytics/cfg/models/master/v0_15/det/yolo-master-b1-tiny.yaml
+
+Integrated detector tests
+-------------------------
+execution: direct import/invocation of all fixture-free test_* functions
+device: CPU-only
+status: PASS
+passed: 8
+failed: 0
+
+PASS test_mixture_loss_composition.py::test_composite_aux_keeps_router_gradient_connection
+PASS test_mixture_loss_composition.py::test_dense_model_keeps_exact_native_criterion
+PASS test_mixture_loss_composition.py::test_latent_aux_uses_conservative_default_gain
+PASS test_mixture_loss_composition.py::test_routed_model_adds_aux_once_and_appends_log_item
+PASS test_mixture_loss_composition.py::test_routed_model_adds_aux_once_to_vector_loss
+PASS test_text_conditioned_mot.py::test_real_detection_model_has_one_router_and_condition_reaches_detector_loss
+PASS test_text_conditioned_mot.py::test_text_conditioned_mot_condition_shapes_aux_and_sparse_telemetry
+PASS test_text_conditioned_mot.py::test_text_conditioned_mot_eval_publication_is_zero_and_detached
+
+Verified detector-path conditions
+---------------------------------
+PASS real DetectionModel batch 1 forward/backward/update finite
+PASS real DetectionModel batch 2 forward/backward/update finite
+PASS exactly one TextConditionedMoT and exactly two experts
+PASS deterministic positive/negative conditions cover expert 0 and expert 1
+PASS caller-owned condition is detached and unchanged
+PASS condition projection and router receive finite nonzero gradients
+PASS both experts receive finite nonzero gradients and parameter updates under deterministic coverage
+PASS canonical current-step MoT aux count = 1
+PASS stale/eval/duplicate aux counts = 0/0/0
+PASS eval aux publication rejected
+
+CUDA component evidence
+-----------------------
+environment: PyTorch 2.4.1+cu121, CUDA 12.1, NVIDIA A100-PCIE-40GB
+steps per seed: 160
+peak whole-process allocator value: 17.7876 MiB allocated / 22.0 MiB reserved
+
+PASS seed 20260822: expert0/1 weight+bias gradients finite/nonzero; updates finite/nonzero; frozen prompt unchanged
+PASS seed 20260823: expert0/1 weight+bias gradients finite/nonzero; updates finite/nonzero; frozen prompt unchanged
+PASS seed 20260824: expert0/1 weight+bias gradients finite/nonzero; updates finite/nonzero; frozen prompt unchanged
+PASS seed 20260825: expert0/1 weight+bias gradients finite/nonzero; updates finite/nonzero; frozen prompt unchanged
+
+Admission package status
+------------------------
+PASS: two-expert small-configuration structural gate and all seven admission artifacts are complete.

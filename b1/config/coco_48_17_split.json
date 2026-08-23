@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "benchmark": "OVR-CNN/Bansal COCO 48/17 split",
+  "annotation_protocol": "Retain base-class boxes only, then remove images with no retained boxes.",
+  "id_semantics": {
+    "category_ids": "COCO annotation category_id values",
+    "coco80_ids": "contiguous zero-based indices in YOLO-Master coco.yaml order"
+  },
+  "base": {
+    "count": 48,
+    "category_ids": [1, 2, 3, 4, 7, 8, 9, 15, 16, 19, 20, 23, 24, 25, 27, 31, 33, 34, 35, 38, 42, 44, 48, 50, 51, 52, 53, 54, 55, 56, 57, 59, 60, 62, 65, 70, 72, 73, 74, 75, 78, 79, 80, 82, 84, 85, 86, 90],
+    "coco80_ids": [0, 1, 2, 3, 6, 7, 8, 13, 14, 17, 18, 21, 22, 23, 24, 26, 28, 29, 30, 33, 37, 39, 42, 44, 45, 46, 47, 48, 49, 50, 51, 53, 54, 56, 59, 61, 62, 63, 64, 65, 68, 69, 70, 72, 73, 74, 75, 79],
+    "names": ["person", "bicycle", "car", "motorcycle", "train", "truck", "boat", "bench", "bird", "horse", "sheep", "bear", "zebra", "giraffe", "backpack", "handbag", "suitcase", "frisbee", "skis", "kite", "surfboard", "bottle", "fork", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "pizza", "donut", "chair", "bed", "toilet", "tv", "laptop", "mouse", "remote", "microwave", "oven", "toaster", "refrigerator", "book", "clock", "vase", "toothbrush"]
+  },
+  "new": {
+    "count": 17,
+    "category_ids": [5, 6, 17, 18, 21, 22, 28, 32, 36, 41, 47, 49, 61, 63, 76, 81, 87],
+    "coco80_ids": [4, 5, 15, 16, 19, 20, 25, 27, 31, 36, 41, 43, 55, 57, 66, 71, 76],
+    "names": ["airplane", "bus", "cat", "dog", "cow", "elephant", "umbrella", "tie", "snowboard", "skateboard", "cup", "knife", "cake", "couch", "keyboard", "sink", "scissors"]
+  },
+  "unused": {
+    "count": 15,
+    "category_ids": [10, 11, 13, 14, 37, 39, 40, 43, 46, 58, 64, 67, 77, 88, 89],
+    "coco80_ids": [9, 10, 11, 12, 32, 34, 35, 38, 40, 52, 58, 60, 67, 77, 78],
+    "names": ["traffic light", "fire hydrant", "stop sign", "parking meter", "sports ball", "baseball bat", "baseball glove", "tennis racket", "wine glass", "hot dog", "potted plant", "dining table", "cell phone", "teddy bear", "hair drier"]
+  },
+  "sources": [
+    "https://ankanbansal.com/files/mscoco_seen_classes.json",
+    "https://ankanbansal.com/files/mscoco_unseen_classes.json",
+    "https://github.com/alirezazareian/ovr-cnn/blob/master/mscoco_seen_classes.json",
+    "https://github.com/alirezazareian/ovr-cnn/blob/master/mscoco_unseen_classes.json"
+  ]
+}

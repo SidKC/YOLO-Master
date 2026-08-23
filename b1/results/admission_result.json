@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "status": "PASS_ADMISSION_SMOKE",
+  "verified_at_utc": "2026-08-23T07:46:21Z",
+  "baseline": {
+    "repository": "Tencent/YOLO-Master",
+    "commit": "acce839c7e895d6b179de7f7093fa879e237cc7b",
+    "model_config": "ultralytics/cfg/models/master/v0_15/det/yolo-master-b1-tiny.yaml"
+  },
+  "implementation_base": {
+    "commit": "22140b74f1fdf7edc5ead18c3dbebce5e611c212",
+    "upstream_commits_after_official_baseline": 3,
+    "contribution_classification": "UPSTREAM_SYNC_NOT_PERSONAL_INCREMENT"
+  },
+  "official_gate": {
+    "requirement": "Two-expert small-configuration forward/backward plus base/new split, freeze strategy and VRAM budget.",
+    "two_expert_forward_backward": "PASS",
+    "base_new_split": "PASS_OFFLINE_48_17_15_PARTITION",
+    "freeze_strategy": "PASS_CONTRACT_AND_SMOKE_EVIDENCE",
+    "vram_budget": "PASS_BUDGET_CONTRACT"
+  },
+  "integrated_detector_smoke": {
+    "device": "CPU",
+    "model": "real DetectionModel",
+    "batch_sizes": [1, 2],
+    "tests_passed": 8,
+    "tests_failed": 0,
+    "forward_backward_update_finite": true,
+    "exact_router_module_count": 1,
+    "exact_expert_count": 2,
+    "both_experts_covered_by_deterministic_route_fixture": true,
+    "frozen_condition_unchanged": true,
+    "condition_projection_gradient_finite_nonzero": true,
+    "router_gradient_finite_nonzero": true,
+    "both_experts_gradient_finite_nonzero_under_fixture": true,
+    "both_experts_update_finite_nonzero_under_fixture": true,
+    "canonical_aux_current_step_count": 1,
+    "canonical_aux_stale_eval_duplicate": [0, 0, 0],
+    "criterion_aux_consumed_once": true
+  },
+  "cuda_component_smoke": {
+    "device": "NVIDIA A100-PCIE-40GB",
+    "torch": "2.4.1+cu121",
+    "cuda": "12.1",
+    "seeds": [20260822, 20260823, 20260824, 20260825],
+    "steps_per_seed": 160,
+    "passing_seeds": 4,
+    "both_experts_gradient_and_update_gate": "4/4",
+    "frozen_prompt_gate": "4/4",
+    "whole_process_peak_allocated_mib": 17.78759765625,
+    "whole_process_peak_reserved_mib": 22.0,
+    "scope": "component-level structural CUDA evidence"
+  },
+  "data_split": {
+    "protocol": "OVR-CNN/Bansal COCO 48/17",
+    "base_count": 48,
+    "new_count": 17,
+    "unused_count": 15,
+    "pairwise_disjoint": true,
+    "union_count": 80
+  },
+  "memory_budget": {
+    "reference_device": "RTX 4090 24 GiB",
+    "warm_max_memory_reserved_cap_gib": 19.2,
+    "required_headroom_gib": 4.8
+  }
+}

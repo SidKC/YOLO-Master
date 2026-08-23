@@ -48,6 +48,24 @@ def test_routed_model_adds_aux_once_and_appends_log_item():
     assert native.updates == 1
 
 
+def test_routed_model_adds_aux_once_to_vector_loss():
+    clear_aux_records(step=11)
+    model = nn.Sequential(C2fMoA(16, 16, n=1, num_heads=3)).train()
+    output = model(torch.randn(2, 16, 4, 4))
+    native_loss = torch.tensor([1.0, 2.0, 3.0])
+
+    class VectorNativeCriterion:
+        def __call__(self, preds, batch):
+            return native_loss, torch.tensor([1.0, 2.0, 3.0])
+
+    loss, _ = CompositeCriterion(model, VectorNativeCriterion())(output, {})
+    aux = model._last_mixture_aux_loss
+
+    assert loss.shape == native_loss.shape
+    assert torch.allclose(loss.sum(), native_loss.sum() + aux)
+    assert torch.equal(loss[1:], native_loss[1:])
+
+
 def test_composite_aux_keeps_router_gradient_connection():
     clear_aux_records(step=2)
     block = C2fMoA(16, 16, n=1, num_heads=3).train()
