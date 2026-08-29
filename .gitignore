@@ -221,6 +221,10 @@ wiki/repowiki/*/meta/repowiki-metadata.json
 !reports/issue52-figs/
 !reports/issue52-figs/*.png
 
+# Checked-in, reproducible figures for the B1 YOLOE-26n P0 report
+!reports/figures/
+!reports/figures/b1_yoloe26_p0_*.svg
+
 # Local working artifacts (not for upstream)
 /images.zip
 /embeddings.npy
