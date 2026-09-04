@@ -1,5 +1,7 @@
 # B1 P1 文本条件路由归因报告
 
+[English](b1_p1_attribution_closure.md)
+
 - **阶段：** B1 P1
 - **报告日期：** 2026-09-04
 - **实现版本：** `47ac2ecd27a4278aee7bda34a63ab108d4719e65`
