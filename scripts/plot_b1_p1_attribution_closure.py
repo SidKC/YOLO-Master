@@ -111,6 +111,7 @@ def configure_style() -> None:
         {
             "figure.dpi": 160,
             "savefig.dpi": 240,
+            "svg.hashsalt": "b1-p1-attribution-closure",
             "font.family": "DejaVu Sans",
             "font.size": 11,
             "axes.titlesize": 13,
