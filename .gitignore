@@ -225,6 +225,7 @@ wiki/repowiki/*/meta/repowiki-metadata.json
 !reports/figures/
 !reports/figures/b1_yoloe26_p0_*.svg
 !reports/figures/b1_p1_2_text_causal_*.svg
+!reports/figures/b1_p1_attribution_closure_*.svg
 
 # Local working artifacts (not for upstream)
 /images.zip
