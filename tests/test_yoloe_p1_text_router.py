@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from ultralytics.nn.mixture_loss import CompositeCriterion
+from ultralytics.nn.modules.moa import C2fMoA
 from ultralytics.nn.modules.mot import TextConditionedMoT
 from ultralytics.nn.modules.routing_protocol import (
     clear_aux_records,
@@ -16,8 +17,9 @@ from ultralytics.nn.modules.routing_protocol import (
     get_aux_record,
     reset_routing_runtime_state,
 )
-from ultralytics.nn.tasks import YOLOEModel
+from ultralytics.nn.tasks import YOLOEModel, YOLOESegModel
 from ultralytics.utils import DEFAULT_CFG_DICT, IterableSimpleNamespace
+from ultralytics.utils.loss import E2ELoss, v8SegmentationLoss
 
 
 MODEL_CFG = "yoloe-26n.yaml"
@@ -91,6 +93,27 @@ def test_disabled_adapter_is_equivalent_and_does_not_change_module_list():
     for left, right in zip(_leaves(before), _leaves(after)):
         assert torch.equal(left, right)
     assert set(model.state_dict()) == keys_before
+
+
+def test_disabled_adapter_preserves_other_routed_aux_criterion():
+    model = _model()
+    model.other_router = C2fMoA(16, 16, n=1, num_heads=3)
+
+    assert model.p5_text_router_enabled is False
+    assert isinstance(model.init_criterion(), CompositeCriterion)
+
+
+def test_disabled_adapter_preserves_segmentation_criterion():
+    model = YOLOESegModel("yoloe-26n-seg.yaml", ch=3, nc=NUM_CLASSES, verbose=False)
+    model.args = IterableSimpleNamespace(**DEFAULT_CFG_DICT)
+
+    assert model.p5_text_router_enabled is False
+    criterion = model.init_criterion()
+    if isinstance(criterion, E2ELoss):
+        assert isinstance(criterion.one2many, v8SegmentationLoss)
+        assert isinstance(criterion.one2one, v8SegmentationLoss)
+    else:
+        assert isinstance(criterion, v8SegmentationLoss)
 
 
 def test_released_load_then_enable_keeps_unfused_core_keys_additive():
