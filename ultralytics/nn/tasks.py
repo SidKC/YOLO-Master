@@ -1515,8 +1515,10 @@ class YOLOEModel(DetectionModel):
     def init_criterion(self):
         """Build the native loss, using raw single-consumption aux when P1 is enabled."""
 
+        if not self.p5_text_router_enabled:
+            return super().init_criterion()
         native = E2ELoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)
-        return _P1TextRouterCriterion(self, native) if self.p5_text_router_enabled else native
+        return _P1TextRouterCriterion(self, native)
 
     def _migrate_released_segmentation_execution_semantics(self, source):
         """Migrate non-state SPPF activation metadata for fully shared released segmentation sources only."""
