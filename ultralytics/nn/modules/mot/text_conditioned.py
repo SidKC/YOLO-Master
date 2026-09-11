@@ -209,9 +209,7 @@ class TextConditionedMoT(nn.Module):
         actual_expert_module_invocations = int(expert_forward_counts["module_invocations"])
         actual_expert_forward_sample_calls = int(expert_forward_counts["output_batch_samples"])
         actual_expert_module_invocations_by_expert = list(expert_forward_counts["module_invocations_by_expert"])
-        actual_expert_forward_sample_calls_by_expert = list(
-            expert_forward_counts["output_batch_samples_by_expert"]
-        )
+        actual_expert_forward_sample_calls_by_expert = list(expert_forward_counts["output_batch_samples_by_expert"])
         if self.routing_mode == "hard":
             routed = routed * selected_probability.to(dtype=routed.dtype).view(-1, 1, 1, 1)
         output = self.output_projection(routed) + features
