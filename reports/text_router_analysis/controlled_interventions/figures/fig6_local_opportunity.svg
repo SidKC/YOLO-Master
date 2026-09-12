@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="410" viewBox="0 0 1080 410" role="img" aria-labelledby="title desc">
+<title id="title">Local expert opportunity and target-metric outcome</title>
+<desc id="desc">Per-image diagnostic preference counts and New17 AP difference from the best fixed expert.</desc>
+<style>
+          .bg{fill:#fff}.title{font:700 22px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#111827}
+          .subtitle,.note{font:12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#4b5563}
+          .panel-title{font:700 15px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#111827}
+          .label{font:12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#374151}.frame{fill:none;stroke:#d1d5db}
+          .zero{stroke:#111827;stroke-width:1;stroke-dasharray:3 3}
+        </style>
+<rect class="bg" width="1080" height="410"/>
+<text class="title" x="32" y="34">局部专家机会与目标指标收益</text>
+<text class="subtitle" x="32" y="56">逐图诊断选择器用于检验机会，不是可部署路由器，也不构成 AP 上界</text>
+<rect class="frame" x="28" y="76" width="1024" height="270" rx="8"/>
+<text class="panel-title" x="60" y="108">(a) 逐图诊断偏好计数</text>
+<text class="panel-title" x="650" y="108">(b) 相对最佳固定专家</text>
+<text class="label" x="92" y="154" text-anchor="end">S0</text>
+<rect x="100.0" y="140" width="65.0" height="20" fill="#2563eb"/>
+<rect x="165.0" y="140" width="49.9" height="20" fill="#ea580c"/>
+<rect x="214.9" y="140" width="335.1" height="20" fill="#d1d5db"/>
+<text class="label" x="325" y="182" text-anchor="middle">机会 1277 · 改选 555</text>
+<text class="label" x="92" y="214" text-anchor="end">S1</text>
+<rect x="100.0" y="200" width="59.1" height="20" fill="#2563eb"/>
+<rect x="159.1" y="200" width="51.3" height="20" fill="#ea580c"/>
+<rect x="210.4" y="200" width="339.6" height="20" fill="#d1d5db"/>
+<text class="label" x="325" y="242" text-anchor="middle">机会 1227 · 改选 570</text>
+<text class="label" x="92" y="274" text-anchor="end">S2</text>
+<rect x="100.0" y="260" width="50.5" height="20" fill="#2563eb"/>
+<rect x="150.5" y="260" width="52.6" height="20" fill="#ea580c"/>
+<rect x="203.1" y="260" width="346.9" height="20" fill="#d1d5db"/>
+<text class="label" x="325" y="302" text-anchor="middle">机会 1145 · 改选 584</text>
+<line class="zero" x1="830.0" y1="125" x2="830.0" y2="310"/>
+<text class="label" x="672" y="159" text-anchor="end">S0</text>
+<circle cx="888.1" cy="155" r="7" fill="#2563eb"/>
+<text class="label" x="900.1" y="159" text-anchor="start">+0.194 AP</text>
+<text class="label" x="672" y="219" text-anchor="end">S1</text>
+<circle cx="781.1" cy="215" r="7" fill="#ea580c"/>
+<text class="label" x="793.1" y="219" text-anchor="start">-0.163 AP</text>
+<text class="label" x="672" y="279" text-anchor="end">S2</text>
+<circle cx="985.4" cy="275" r="7" fill="#059669"/>
+<text class="label" x="973.4" y="279" text-anchor="end">+0.518 AP</text>
+<text class="label" x="680" y="330">−0.5</text><text class="label" x="830" y="330" text-anchor="middle">0</text><text class="label" x="980" y="330" text-anchor="end">+0.5 AP 点</text>
+<text class="note" x="32" y="382">计数将 5,000 张图分为 E0 更优、E1 更优和平局；右侧点差使用完整预测的 COCO New17 AP。</text>
+</svg>

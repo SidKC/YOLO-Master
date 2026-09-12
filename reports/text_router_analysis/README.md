@@ -6,5 +6,6 @@
 - [统计结果](data/bootstrap_summary.csv)：18 组比较的点差及修正后区间；[新旧统计对照](data/bootstrap_before_after.csv)。
 - [测试证据](tests/README.md)：69 项 CPU 测试及依赖、命令和精选输出。
 - [实验产物索引](artifacts/README.md)：检查点与预测文件的记录信息。
+- [同一检查点的门控与专家选择干预](controlled_interventions/README.md)：24 个实际 batch=1 条件、配对统计、协议与图表。
 
-- 图表：[模块与尺度示意](figures/fig1_method.svg)、[训练路线比较](figures/fig2_training.svg)、[同一模型的文本替换实验](figures/fig3_text.svg)、[专家选择与评分差](figures/fig4_trace.svg)。
+- 图表：[模块与尺度示意](figures/fig1_method.svg)、[训练路线比较](figures/fig2_training.svg)、[同一模型的文本替换实验](figures/fig3_text.svg)、[专家选择与评分差](figures/fig4_trace.svg)、[受控门控与选择干预](controlled_interventions/figures/fig5_controlled_interventions.svg)、[局部专家机会](controlled_interventions/figures/fig6_local_opportunity.svg)。
